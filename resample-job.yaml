@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: resample-0p25
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: gdal
+          image: ghcr.io/osgeo/gdal:ubuntu-small-3.8.5
+          env:
+            - name: IN
+              value: /data/slide.svs
+            - name: OUT
+              value: /data/slide_0p25.tif
+            - name: TARGET
+              value: "0.25"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              MPP=$(set +o pipefail; gdalinfo "$IN" 2>/dev/null | awk 'match($0, /MPP = [0-9.]+/) {print substr($0, RSTART + 6, RLENGTH - 6); exit}')
+              echo "MPP $MPP -> $TARGET"
+              # here-document: write the input world file (quoted 'EOF' = no shell expansion inside; values via awk)
+              awk -v m="$MPP" 'BEGIN{printf "%.10f\n0\n0\n%.10f\n%.10f\n%.10f\n", m, -m, m/2, -m/2}' > "${IN%.*}.wld"
+              cat > /tmp/notes.txt <<'EOF'
+              world file written next to the slide; $IN and $(...) stay literal in a quoted here-document
+              EOF
+              gdalwarp -q -overwrite --config GDAL_PAM_ENABLED NO -ovr NONE -tr "$TARGET" "$TARGET" -r cubic \
+                -multi -wo NUM_THREADS=ALL_CPUS -co PROFILE=BASELINE -co TFW=YES -co TILED=YES \
+                -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 -co COMPRESS=ZSTD -co ZSTD_LEVEL=1 -co PREDICTOR=2 \
+                -co BIGTIFF=IF_SAFER "$IN" "$OUT"
+              mv "${OUT%.*}.tfw" "${OUT%.*}.wld"
+              gdaladdo -q -r average "$OUT" 2 4 8 16 32
+              cat /tmp/notes.txt
+              echo "done: $OUT"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: slides

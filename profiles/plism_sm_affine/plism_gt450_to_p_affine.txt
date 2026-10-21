@@ -1,0 +1,5 @@
+# PLISM-sm GT450 -> P (Philips UFS), fitted on all 4,454 groups
+# linear light: [R', G', B'] = M @ [R, G, B, 1]; values 0..1; gamma 2.2 encoding on both sides unless noted
+ 1.774081  -0.725762  -0.130034  -0.075314
+-0.190587   1.121696  -0.140808   0.002860
+ 0.050827  -0.127675   0.951955   0.008236
