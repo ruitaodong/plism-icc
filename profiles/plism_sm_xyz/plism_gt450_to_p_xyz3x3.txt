@@ -1,0 +1,6 @@
+# PLISM-sm GT450 -> P (Philips UFS): 3x3 in CIE XYZ (D50, white Y = 1), fitted on the 4,148 PLISM-sm groups with aligned lightness correlation >= 0.6
+# XYZ_P = M @ XYZ_GT450, where XYZ_GT450 = Segue_v2 (GT450 embedded ICC, A2B1) applied to gamma-2.2-encoded GT450 RGB,
+# and XYZ_P = sRGB-decoded P pixels @ SRGB_TO_XYZ_D50 (Bradford-adapted sRGB matrix)
+ 1.03308 -0.21109  0.00853
+ 0.25002  0.54650  0.01413
+-0.02955  0.22301  0.62677
