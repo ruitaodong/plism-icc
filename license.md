@@ -17,7 +17,8 @@ This file covers the licenses of the data, derived data and code in
 |--------|-------|---------|
 | PLISM (Ochi, Komura, Onoyama, Ishikawa; University of Tokyo) | Figshare+, [doi:10.25452/figshare.plus.c.6773925](https://doi.org/10.25452/figshare.plus.c.6773925) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Registered tiles (Owkin) | Hugging Face, [owkin/plism-dataset](https://huggingface.co/datasets/owkin/plism-dataset) | CC BY 4.0 |
-| Trimmed subset (this repository) | [Release v1](https://github.com/ruitaodong/plism-icc/releases/tag/v1) | CC BY 4.0 (inherited) |
+| Subset of Owkin's tiles (this repository) | Releases [v1](https://github.com/ruitaodong/plism-icc/releases/tag/v1) and [300](https://github.com/ruitaodong/plism-icc/releases/tag/300) | CC BY 4.0 (inherited) |
+| Subset of the original PLISM files (this repository) | Releases [PLISM_sm](https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_sm) and [PLISM_wsi](https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_wsi) | CC BY 4.0 (inherited) |
 
 The PLISM figures referenced in the README are linked from the PLISM project page
 (https://p024eb.github.io/), not copied into this repository.
@@ -48,13 +49,43 @@ To the redistributed tiles (release v1):
 - Selection of the 3,000 tiles: **TODO: describe the selection rule (e.g. random with seed, or
   first N ids)**.
 
+To the redistributed tiles (release 300):
+
+- Subset only: 13 stains, two scanners (`GT450`, `P`), 300 of the 16,278 tile positions, the
+  same 300 patch ids in all 26 files.
+- Selection: `sample_tiles.py` with seed 42, i.e. `random.Random(42).sample(...)` over the sorted
+  `tile_*` dataset names of a file, then sorted (`extract300.sh`). The tile names are the same in
+  every Owkin file, so every file gets the same ids.
+- Repackaged into one HDF5 file per stain and scanner (`<stain>_<scanner>_300.h5`), gzip level 9;
+  file and dataset attributes copied.
+- Pixel values are not modified. Tiles are copied as published by Owkin.
+
+To the redistributed PLISM-sm images (release PLISM_sm):
+
+- Taken from the original PLISM dataset (Figshare+), not from Owkin's tiles.
+- Subset only: the images of two WSI scanners (`GT450`, `P`), 4,454 PNGs each, all 13 stains.
+  The six smartphones and the other five scanners are left out.
+- Repackaged into one `.tar.bz2` per scanner, with the original `<stain>/<scanner>/<coordinate>.png`
+  paths and file dates.
+- Files are not modified: the PNGs are byte-for-byte as published.
+
+To the redistributed whole-slide images (release PLISM_wsi):
+
+- Taken from the original PLISM dataset (Figshare+).
+- Subset only: two slides of stain `HR`, `HR_GT450.svs` (Leica Aperio GT450) and `HR_P.tiff`
+  (Philips UltraFast Scanner).
+- Files are not modified or recompressed: uploaded as published, including their embedded ICC
+  profiles and vendor metadata.
+
 Derived data produced by the tools in this repository (block sums, alignment scores, fitted
 LUTs, ICC profiles, `.cube` files, comparison figures) are adaptations of PLISM. We release them
 under CC BY 4.0 as well, with the same attribution.
 
 ### Attribution block for releases
 
-Every release that contains PLISM data or derived data carries this text in its notes:
+Every release that contains PLISM data or derived data carries one of these texts in its notes.
+
+For releases built from Owkin's registered tiles (`v1`, `300`):
 
 ```text
 Contains data from PLISM (Pathology Images of Scanners and Mobilephones),
@@ -64,6 +95,17 @@ Registered tiles from owkin/plism-dataset (Owkin), https://huggingface.co/datase
 Licensed under CC BY 4.0, https://creativecommons.org/licenses/by/4.0/.
 Changes: subset of stains/scanners/tiles, repackaged into HDF5; see license.md "Changes made".
 Not endorsed by the PLISM authors or Owkin.
+```
+
+For releases of original PLISM files (`PLISM_sm`, `PLISM_wsi`):
+
+```text
+Contains data from PLISM (Pathology Images of Scanners and Mobilephones),
+Ochi M., Komura D., Onoyama T., Ishikawa S., Figshare+ (2023),
+https://doi.org/10.25452/figshare.plus.c.6773925, and Ochi et al., Sci Data 11, 330 (2024).
+Licensed under CC BY 4.0, https://creativecommons.org/licenses/by/4.0/.
+Changes: subset of devices/slides only; files are unmodified; see license.md "Changes made".
+Not endorsed by the PLISM authors.
 ```
 
 ### Third-party components

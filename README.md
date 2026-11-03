@@ -4,7 +4,9 @@ Scanner-to-scanner color calibration for digital pathology, developed on the PLI
 
 The tools fit a 3D lookup table (affine + 33^3 lattice) that maps the colors of a source scanner
 to a target scanner from registered image pairs, and write it as ICC profiles (device link and
-input profile) and as a `.cube` LUT. The repository covers the whole path: alignment scoring,
+input profile) and as a `.cube` LUT. For GT450 -> Philips UFS there is also a profile-based
+alternative: the GT450's own vendor profile to CIE XYZ, then a single 3x3 matrix (see
+`profiles/plism_sm_xyz/`). The repository covers the whole path: alignment scoring,
 pyramid building, robust fitting with slide-level hold-out tuning, optional scoring through your
 own models, and applying the profiles to rasters.
 
@@ -21,9 +23,13 @@ Ishikawa (University of Tokyo):
 | 2. Registered tiles | 91 slides (13 stains x 7 scanners), 16,278 tiles of 224x224 px each, registered to the `GMH_S60` slide with Elastix | Hugging Face, [owkin/plism-dataset](https://huggingface.co/datasets/owkin/plism-dataset) (Owkin) | CC BY 4.0 |
 | 3a. Subset (this repo) | 3,000 tile pairs of stain `HRH`, scanners `GT450` and `P` | [Release v1](https://github.com/ruitaodong/plism-icc/releases/tag/v1) | CC BY 4.0 (inherited) |
 | 3b. Subset (this repo) | 300 matched tiles for each of the 13 stains, scanners `GT450` and `P` (26 files, same tile ids in all) | [Release 300](https://github.com/ruitaodong/plism-icc/releases/tag/300) | CC BY 4.0 (inherited) |
+| 3c. Subset of step 1 (this repo) | PLISM-sm images of scanners `GT450` and `P` only: 4,454 PNGs each (512x512), all 13 stains | [Release PLISM_sm](https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_sm) | CC BY 4.0 (inherited) |
+| 3d. Subset of step 1 (this repo) | Two original whole-slide images of stain `HR`: `HR_GT450.svs` (0.26212 um/px) and `HR_P.tiff` (0.25 um/px) | [Release PLISM_wsi](https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_wsi) | CC BY 4.0 (inherited) |
 
-Release files keep the layout of step 2: one dataset per tile, named `tile_<level>_<x>_<y>`,
-each a `(224, 224, 3)` uint8 RGB array, gzip-compressed. Licensing, attribution and the list of
+Releases `v1` and `300` keep the layout of step 2: one dataset per tile, named `tile_<level>_<x>_<y>`,
+each a `(224, 224, 3)` uint8 RGB array, gzip-compressed. Releases `PLISM_sm` and `PLISM_wsi`
+contain unmodified PLISM files from step 1 (PNGs in `<stain>/<scanner>/<coordinate>.png`,
+packed as `.tar.bz2`; the two slides as published). Licensing, attribution and the list of
 changes are in [license.md](license.md).
 
 ### Scanners
@@ -38,7 +44,8 @@ changes are in [license.md](license.md).
 | `GT450` | Leica | Aperio GT450 |
 | `P` | Philips | UltraFast Scanner |
 
-The smartphone subset of PLISM (PLISM-sm) is not used.
+From the smartphone subset (PLISM-sm), only the GT450 and P scanner images are used; the
+smartphone images are not (see [PLISM_sm.md](PLISM_sm.md)).
 
 ### Staining conditions
 
@@ -102,11 +109,16 @@ not copied into this repository.
 | `apply_icc_rasterio.py` | Apply a device link or input profile to a raster (`apply`), embed an input profile (`tag`), or inspect one (`info`). Identical to LittleCMS output. |
 | `grid_eval.py`, `run_grid_eval.sh` | Per-patch hold-out evaluation of a fitted device link against the reference (region/pixel dE00, contrast, dark tail) to CSV, and a grid of N random and N worst patches with an error map; the shell script runs several source scanners in parallel. |
 | `relayout_tiff.py` | Lossless conversion of pyramidal TIFFs between top-level pages and SubIFDs (libtiff `tiffcp` drops SubIFDs). |
+| `apply_xyz_bridge.py` | Apply the GT450 -> P XYZ bridge (`profiles/plism_sm_xyz/`) with Pillow/LittleCMS: optional `--gamma` encoding (default off), then the input profile -> sRGB; tiles, folders or OpenSlide regions. |
+| `wsi_xyz.py` | Pixels to CIE XYZ (D50): Philips UFS pixels via the sRGB definition, GT450 pixels via a Segue lut16 profile; `xyz_to_lab`. |
+| `analysis/plism_sm/sm_xyz_fit.py` | Fit the XYZ bridge on PLISM-sm (alignment, linear-light block means, soft-L1 dE00 fit of a 3x3, 15% hold-out and leave-one-stain-out), write ICC input profile and device link. |
+| `analysis/plism_wsi/` | Cropping PLISM fields from the original slides with OpenSlide (example boxes for `HRH` prostate). |
 | `plism_icc.py` | Core library (lattice fit, ICC/`.cube` writers, color utilities) and the original PLISM pipeline (`--local-dir` or streaming from Hugging Face). |
 | `extract_b4.py`, `run_extract_b4.sh`, `plism_extract_bins8.py`, `run_hrh.sh` | Earlier extraction helpers for PLISM block sums; kept for reproducibility. |
 
 Requirements: `numpy scipy scikit-image h5py tifffile pillow` (+ `imagecodecs` for float TIFF
-predictors, `rasterio` for `apply_icc_rasterio.py`, `huggingface_hub` for streaming PLISM).
+predictors, `rasterio` for `apply_icc_rasterio.py`, `huggingface_hub` for streaming PLISM,
+`openslide-python` for reading slides, `pandas` for `sm_xyz_fit.py`).
 
 ## Typical workflow
 
@@ -156,7 +168,9 @@ Outputs of `fit_pyr.py`:
 
 ## Findings on PLISM
 
-**Registration.** The registered tiles are not pixel-aligned between scanners. For `HRH`, `P` is
+**Registration (Owkin 224 px tiles).** Owkin's registered tiles are not pixel-aligned between
+scanners (PLISM's own PLISM-sm and PLISM-wsi tiles are aligned to a few pixels; see `PLISM_sm.md`
+and `PLISM_wsi.md`). For `HRH`, `P` is
 offset from `GT450` by a median of about (-20, -21) px (18 to 52 px, 10th-90th percentile),
 varying smoothly across the slide; there is no slide-wide rotation or scale. Fitting on
 misaligned pairs flattens contrast (dark colors pulled toward the middle); per-tile alignment
@@ -210,6 +224,27 @@ in training data downsampled by:
 Fit no more than 2x below the resolution at which the profile will be applied; beyond that, the
 darkest and most saturated pixel colors fall outside the data-supported part of the LUT.
 
+**Vendor profiles and pixel encodings (GT450, Philips UFS).**
+- PLISM's GT450 slides store gamma-2.2-encoded raw RGB (SVS header `Gamma = 2.2`) and embed the
+  vendor profile `Segue_v2` (RGB -> XYZ, 103^3 lookup table). The profile is stored, not applied;
+  OpenSlide returns the stored pixels.
+- The Philips UFS applies its own calibration on the scanner (matrix-only profile, absolute
+  colorimetric rendering to sRGB). Stored P pixels are sRGB; the profile kept with iSyntax files
+  documents that conversion and must not be applied again.
+- PLISM's tiles (PLISM-sm and PLISM-wsi) are these stored pixels, resampled to the `S60` grid
+  (about 0.219 um/px); see `PLISM_wsi.md`.
+
+**Profile-based bridge.** Converting GT450 with its vendor profile and P with the sRGB definition
+leaves a difference that is linear in light: one 3x3 matrix in XYZ reaches region dE00 0.744 on a
+15% hold-out of PLISM-sm (0.79 leave-one-stain-out, worst `HR` 1.60), the same accuracy as the
+33^3 LUT, with sensible behaviour for white, gray and saturated colors. The vendor profile alone
+reduces the error from 8.8 to 5.6; the matrix removes P's darker glass rendering and a hue rotation
+of about 11 deg. Details in `PLISM_sm.md` section 6 and `profiles/plism_sm_xyz/`.
+
+**Sharpness.** At native resolution, GT450 is crisper than P at the nuclear scale (equivalent
+Gaussian sigma about 0.2 um), consistent with its in-scanner filter; resampling to the PLISM grid
+hides this. See `PLISM_wsi.md`.
+
 ## Practical guidance
 
 - **A profile is specific to the scanner units and the image reading path.** The relationship
@@ -229,11 +264,17 @@ darkest and most saturated pixel colors fall outside the data-supported part of 
   staining batches, scanned on both scanners. At application time, report the share of pixels
   outside the training color coverage and flag slides above a few percent.
 - **Work on raw pixels on both sides.** Slide readers such as OpenSlide return the stored pixels
-  and do not apply a slide's embedded ICC profile (OpenSlide 4 only exposes it); vendor SDKs may
-  apply theirs only on request. Vendor profiles describe different kinds of data (display-encoded
-  RGB, or linear sensor data at a calibration exposure) and, in our tests, did not bring scanners
-  closer together. Fit and apply on raw pixels read the same way, and do not carry the source
-  slide's embedded profile into converted files, or color-managed viewers will convert twice.
+  and do not apply a slide's embedded ICC profile (OpenSlide 4 attaches it to the regions it reads;
+  strip it before saving). Know what each vendor profile describes before using it: the GT450's
+  Segue profile describes its stored gamma-2.2 RGB and is a good first step toward XYZ (see the
+  profile-based bridge); the Philips UFS profile describes the linear sensor data and has already
+  been applied to the stored sRGB pixels. Fit and apply on pixels read the same way, and do not
+  carry the source slide's embedded profile into converted files, or color-managed viewers will
+  convert twice.
+- **Check the pixel encoding.** The XYZ bridge expects gamma-2.2-encoded GT450 pixels, as in PLISM.
+  If your GT450 data is linear (for example after an export step, or if the SVS header has no
+  `Gamma = 2.2`), encode it first (`apply_xyz_bridge.py --gamma 2.2`) and check a few paired
+  tiles: an encoding mismatch costs about 10 dE00, far more than any profile or model choice.
 - **Apply device links exactly.** Use tetrahedral (or trilinear) interpolation of the table:
   coarse precalculated transforms in color-management engines can shift colors by several
   levels. When reading the `.cube` file yourself, note that red varies fastest: a plain
@@ -248,11 +289,14 @@ darkest and most saturated pixel colors fall outside the data-supported part of 
 |---|---|
 | `profiles/plism_sm_lut/` | PLISM-sm GT450 -> P 33^3 LUT profile (robust c = 2, lambda 1e-4), tuning and 15% hold-out tables |
 | `profiles/plism_sm_affine/` | the same mapping as a linear-light affine (12 numbers) with exact ICC files |
+| `profiles/plism_sm_xyz/` | profile-based bridge: GT450 Segue_v2 -> XYZ -> 3x3 (9 numbers), ICC input profile and device link |
+| `analysis/plism_wsi/` | OpenSlide crops of PLISM fields from the original slides |
 | `analysis/plism_sm/` | pair preparation and fit / evaluation scripts for PLISM-sm |
 | `lists/plism_sm/` | PLISM-sm GT450/P file lists and manifests |
 | `figures/` | PLISM figures (registration, hold-out examples, affine vs LUT) |
 
-See `PLISM_sm.md` for the PLISM-sm findings.
+See `PLISM_sm.md` for the PLISM-sm findings and `PLISM_wsi.md` for the tile geometry, slide
+headers, registration and sharpness.
 
 ## Citation
 

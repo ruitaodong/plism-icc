@@ -14,9 +14,10 @@ Source list: `PLISM_sm_en.csv` (57,902 rows).
 - **Same section within a group.** One stain is one glass slide, so the 7 scanner images of a
   group show the same physical section: valid pixel pairs for any scanner pair. Different stains
   are different serial sections and must not be paired at pixel level.
-- **Coordinates.** A box `x1_y1_x2_y2` in the AT2 WSI; median 2,743 x 3,497 px (about
-  0.7 x 0.9 mm, the smartphone microscope field). The PNGs are 512 x 512 RGB center crops after
-  alignment (about 325 KB each).
+- **Coordinates.** A box `x1_y1_x2_y2`, described as AT2 WSI coordinates; median 2,743 x 3,497 px
+  (the smartphone microscope field). The PNGs are 512 x 512 RGB crops after alignment (about
+  325 KB each). In `HRH_AT2.svs` the PNG content is not at the box position: locating it in the
+  original slides needed a search well beyond the box (see `PLISM_wsi.md`).
 - **Groups per stain.** GV 437, LMH 436, GVH 420, MY 394, KR 393, GMH 381, LM 317, KRH 301,
   GIVH 297, GIV 297, HR 268, GM 258, HRH 255.
 - **Tissues.** All 46 types, named `NN_name`; 6-130 groups per tissue (median 106). 534 of 598
@@ -51,14 +52,13 @@ Per stain (correlation before / after / share r > 0.6): GIV 0.92 / 0.93 / 100%, 
 The pale stains that registered worst in the Owkin tiles (MY, LMH, LM) are as good as the
 others here. Per-patch alignment is only a safety net.
 
-## 3. Pixel scale (rough estimate)
+## 3. Pixel scale
 
-The CSV does not give the PNG pixel size. Nuclei (dark, bluish connected components) are 1.33x
-larger in pixels than in the Owkin tiles of the same stain and scanner (median equivalent
-diameter 8.7 vs 6.6 px; 1.73x at the 75th percentile). If the Owkin tiles are about
-0.5 um/px (20x), the PLISM-sm PNGs are roughly **0.3-0.4 um/px** and a 512 px patch covers
-about 150-190 um: between 20x and native 40x, consistent with WSI regions warped once into the
-smartphone image frame. Nucleus segmentation is only an approximate ruler.
+The PNGs are on the `S60` pixel grid, about **0.219 um/px**: a 512 px patch covers about 112 um,
+i.e. about 415-443 GT450 pixels and 433-461 P pixels at native resolution. Measured by registering
+PLISM tiles to the original GT450 and P slides (see `PLISM_wsi.md`); this replaces an earlier
+estimate of 0.3-0.4 um/px from nucleus sizes. The PNG pixel values are the stored slide pixels
+(GT450 raw RGB without its embedded profile, P stored sRGB), resampled once onto that grid.
 
 ## 4. GT450 -> P fit with a 15% hold-out
 
@@ -129,7 +129,7 @@ Refit on all 4,454 groups (5.20 M joint bins) with c = 2, lambda 1e-4; 12.4% of 
 down-weighted to zero. Checked as a real device link on full-resolution held-out PNG pairs:
 region dE00 9.87 -> 0.64 (six groups).
 
-Files in `plism_sm_gt450_to_p/`:
+Files in `profiles/plism_sm_lut/`:
 
 | File | Content |
 |---|---|
@@ -138,16 +138,41 @@ Files in `plism_sm_gt450_to_p/`:
 | `gt450_to_p_plism_sm.cube`, `gt450_to_p_plism_sm_lut.npy` | same LUT as `.cube` and (33, 33, 33, 3) array |
 | `tuning_holdout15.csv` | every tested setting with all metrics |
 | `holdout15_per_group.csv` | each held-out group: stain, tissue, coordinate, dE00 raw / non-robust / robust |
-| `scripts/sm_prep_chunk.py`, `scripts/sm_fit.py` | pair preparation (chunked) and fit / evaluation |
+| `analysis/plism_sm/sm_prep_chunk.py`, `analysis/plism_sm/sm_fit.py` | pair preparation (chunked) and fit / evaluation |
 
-## 6. Caveats and next steps
+## 6. Profile-based alternative: GT450 vendor profile + 3x3 in XYZ
+
+The same data, fitted after converting each side with fixed, known steps:
+
+    GT450 RGB --[Segue_v2, the GT450's embedded ICC]--> XYZ --[M, 3x3]--> XYZ <--[sRGB decode]-- P RGB
+
+| Region dE00 (64 px regions) | Result |
+|---|---|
+| No mapping | 8.78 |
+| Vendor profile only (no M) | 5.58 |
+| Segue_v2 -> XYZ -> 3x3, random 15% hold-out | **0.744** (median 0.63) |
+| Leave-one-stain-out, mean / worst (`HR`) | 0.79 / 1.60 |
+| Segue_v2 -> XYZ -> 3x4 (offset) | 0.704 |
+| Raw GT450 (gamma 2.2 decoded) -> 3x3 / 3x4 | 0.924 / 0.708 |
+
+- The vendor profile brings GT450 most of the way in saturation (C* 10.8 -> 22.7, P 21.4) and leaves
+  a lightness offset (P renders glass at about L* 90, slightly lavender) and a hue rotation of about
+  11 deg (GT450 bluer), which M removes.
+- What remains after the profile is linear in light (an extra fitted exponent comes out at 1.013),
+  so 9 numbers suffice, as accurate as the 33^3 LUT above, with sensible behaviour for white, gray
+  and saturated colors.
+- An `HRH`-only fit gives nearly the same matrix (0.49 on held-out `HRH`): the stain does not change
+  the scanner relation.
+- Files: `profiles/plism_sm_xyz/`, fit script `analysis/plism_sm/sm_xyz_fit.py`, apply script
+  `apply_xyz_bridge.py`, examples `figures/plism_sm_xyz_holdout_5_examples.png`.
+
+## 7. Caveats and next steps
 
 - The profile maps PLISM's own GT450 and Philips UFS units; scanner relationships are
   unit-specific, so it is a test bed, not a profile for other scanners.
 - The random hold-out shares tissue cores with training (neighbouring fields of the same core),
   so it measures unseen fields, not unseen tissue. **Next: leave-one-tissue-out** with the same
   settings, preferably on the 19 tissues present in all 13 stains.
-- The PNG pixel size is only estimated (0.3-0.4 um/px); confirm it against the original WSIs
-  before drawing resolution conclusions.
-- PLISM-sm patches were resampled once by the alignment to the smartphone frame (mild
-  interpolation blur); a fit on these may differ slightly from one on native WSI pixels.
+- PLISM-sm patches were resampled once onto the `S60` grid (mild interpolation blur); a fit on these
+  may differ slightly from one on native WSI pixels. Native-resolution GT450 is crisper than P at the
+  nuclear scale (equivalent Gaussian sigma about 0.2 um, see `PLISM_wsi.md`); the resampling hides it.
